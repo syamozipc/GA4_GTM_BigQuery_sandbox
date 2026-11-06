@@ -106,6 +106,25 @@
 <div class="callout warn"><span class="label">二重計測に注意</span>
 <p>send-gtag.html のように gtag.js を直書きしたページに、同じ測定IDの Google タグを入れた GTM も置くと、全イベントが2回送られます。このリポジトリでは send-gtag.html が gtag.js、send-gtm.html が GTM と、ページを分けています。</p></div>
 
+<h3 id="hybrid">GTM の上で gtag の命令を使う（第3のパターン）</h3>
+<p>実際のサイトでは、gtag.js 直書きのサイトを GTM に移すとき、ページの <code>gtag("event", …)</code> を残したまま GTM を入れることがあります。GTM の Google タグが gtag.js を読み込むので、ページの <code>gtag()</code> もそのまま動きます。</p>
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>① gtag.js 直書き</th><th>② GTM だけ</th><th>③ GTM ＋ gtag の命令</th></tr></thead>
+<tbody>
+<tr><td>例</td><td>send-gtag.html</td><td>send-gtm.html</td><td>移行途中のサイトなど</td></tr>
+<tr><td>gtag.js を読み込むのは</td><td>ページ</td><td>GTM</td><td>GTM</td></tr>
+<tr><td>ページが積むもの</td><td><code>gtag("event", …)</code></td><td><code>dataLayer.push({ event: … })</code></td><td><code>gtag("event", …)</code></td></tr>
+<tr><td>送り先（測定ID）を書く場所</td><td>ページの <code>gtag("config", …)</code></td><td>GTM のタグ</td><td>ページの <code>gtag("config", …)</code></td></tr>
+<tr><td>計測を足すとき</td><td>コードを直す</td><td>push を足し、GTM でタグを作る</td><td>コードを直す</td></tr>
+<tr><td>GTM の編集権限</td><td>要らない</td><td>要る</td><td>要らない</td></tr>
+<tr><td>設定の置き場所</td><td>ページ</td><td>GTM に集まる</td><td>ページと GTM に分かれる</td></tr>
+</tbody></table></div>
+<p>③ は GTM の編集権限がなくても計測を止めずに済むので、移行の途中段階としては使えます。ただし、ページのイベントの送り先はコードの <code>config</code> で決まるので、GTM から変えたり止めたりはできません。最終的には ② に寄せるのが基本です。</p>
+<div class="callout warn"><span class="label">③ では config を消すとイベントが届かなくなる</span>
+<p><code>send_to</code> を指定しない <code>gtag("event", …)</code> は、それより前にページで実行された <code>gtag("config", …)</code> の測定ID にだけ送られます（<a href="https://developers.google.com/tag-platform/gtagjs/routing">Google のドキュメント</a>）。GTM の Google タグは、このページ側の <code>config</code> には数えられません。</p>
+<p>そのため「GTM に移したから」とページの <code>config</code> を消すと、ページの <code>gtag("event", …)</code> は送り先がなくなり、エラーも出ないまま1件も送られなくなります。<code>page_view</code> など GTM が自分で送るイベントは届き続けるので、気づきにくいのが厄介です。③ ではページの <code>config</code> を残し、<code>page_view</code> を GTM が送るなら <code>send_page_view: false</code> を付けて二重計測を防ぎます。</p>
+<pre data-lang="javascript"><code>gtag("config", "G-XXXXXXXXXX", { send_page_view: false }); <span class="c">// page_view は GTM が送る</span></code></pre></div>
+
 <h2 id="datalayer">dataLayer の仕組み</h2>
 <p><code>dataLayer</code> はページ内のただの JavaScript 配列です。GTM はこの配列の <code>push</code> を監視していて、オブジェクトが積まれるたびに中身を読み取ります。</p>
 <pre data-lang="javascript"><code><span class="c">// GTM スニペットより前に置く（なければ GTM が作る）</span>
@@ -200,6 +219,7 @@ dataLayer.push({ user_plan: "pro" });</code></pre>
 <h2 id="pitfalls">よくある落とし穴</h2>
 <ul>
 <li><strong>二重計測</strong>: gtag.js 直書きと GTM の Google タグを同じ測定IDで併用すると、全イベントが2回送られます。</li>
+<li><strong>config の消しすぎ</strong>: GTM の上でページの <code>gtag("event", …)</code> を使う場合、ページの <code>gtag("config", …)</code> を消すと独自イベントが1件も送られなくなります（<a href="#hybrid">第3のパターン</a>）。</li>
 <li><strong>子要素のクリック</strong>: ボタンの中のアイコンや <code>&lt;span&gt;</code> を押すと、Click Element はその子要素になります。CSS セレクタは <code>.btn, .btn *</code> のように子孫も含めます。</li>
 <li><strong>フォームの妥当性チェック</strong>: ページ側で <code>preventDefault()</code> しているフォームは、フォーム送信トリガーの「妥当性をチェック」をオンにすると発火しません。</li>
 <li><strong>SPA</strong>: React などで URL だけ変わる画面遷移は、ページビュートリガーでは拾えません。履歴の変更トリガーか、遷移時の push で対応します。</li>
